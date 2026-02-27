@@ -71,7 +71,7 @@ class DartMonitor(BaseMonitor):
         new_disclosures = [d for d in disclosures if d["rcept_no"] not in self._seen_rcept_nos]
 
         if not new_disclosures:
-            if self._check_count % 12 == 0:  # 1분마다 (5초 간격 x 12)
+            if self._check_count % 2 == 0:  # 10초마다 (5초 간격 x 2)
                 logger.info(
                     f"[DART] 폴링 #{self._check_count} | "
                     f"조회 {len(disclosures)}건 | 신규 0건 | 변동 없음"

@@ -70,7 +70,7 @@ class NedrugMonitor(BaseMonitor):
             self._last_item_seq = data["item_seq"]
             self._last_approval_date = data["approval_date"]
         else:
-            if self._check_count % 60 == 0:  # 1분마다 (1초 간격 x 60)
+            if self._check_count % 10 == 0:  # 10초마다 (1초 간격 x 10)
                 logger.info(
                     f"[nedrug] 폴링 #{self._check_count} | "
                     f"품목기준코드={data['item_seq']} | "

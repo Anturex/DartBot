@@ -30,7 +30,7 @@ class MfdsMonitor(BaseMonitor):
         new_articles = [a for a in articles if a["seq"] not in self._seen_seqs]
 
         if not new_articles:
-            if self._check_count % 60 == 0:
+            if self._check_count % 10 == 0:
                 logger.info(
                     f"[MFDS] 폴링 #{self._check_count} | "
                     f"파싱 {len(articles)}건 | 신규 0건"
