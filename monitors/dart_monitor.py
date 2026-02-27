@@ -24,11 +24,12 @@ class DartMonitor(BaseMonitor):
         self._seen_rcept_nos: set[str] = set()
         self._backoff_seconds: float = 0
         self._consecutive_errors: int = 0
+        self._check_count: int = 0
 
     async def initialize(self):
         self._corp_code = await self._resolve_corp_code()
         if not self._corp_code:
-            logger.error("[DART] Could not resolve corp_code; will retry in check()")
+            logger.error("[DART] corp_code 변환 실패 | check()에서 재시도 예정")
             return
 
         disclosures = await self._fetch_disclosures()
@@ -36,17 +37,30 @@ class DartMonitor(BaseMonitor):
             for d in disclosures:
                 self._seen_rcept_nos.add(d["rcept_no"])
             logger.info(
-                f"[DART] Initialized with {len(self._seen_rcept_nos)} known disclosures"
+                f"[DART] 초기화 완료 | corp_code={self._corp_code} | "
+                f"기존 공시 {len(self._seen_rcept_nos)}건 로드"
+            )
+            for d in disclosures:
+                logger.info(
+                    f"[DART]   기존: {d['report_nm']} | "
+                    f"접수번호={d['rcept_no']} | 접수일={d['rcept_dt']}"
+                )
+        else:
+            logger.info(
+                f"[DART] 초기화 완료 | corp_code={self._corp_code} | "
+                f"최근 7일 공시 없음"
             )
 
     async def check(self):
+        self._check_count += 1
+
         if not self._corp_code:
             self._corp_code = await self._resolve_corp_code()
             if not self._corp_code:
                 return
 
         if self._backoff_seconds > 0:
-            logger.info(f"[DART] Backing off for {self._backoff_seconds:.1f}s")
+            logger.info(f"[DART] Rate limit 백오프 {self._backoff_seconds:.1f}초 대기")
             await asyncio.sleep(self._backoff_seconds)
             self._backoff_seconds = 0
 
@@ -54,11 +68,28 @@ class DartMonitor(BaseMonitor):
         if disclosures is None:
             return
 
-        for d in disclosures:
-            if d["rcept_no"] not in self._seen_rcept_nos:
+        new_disclosures = [d for d in disclosures if d["rcept_no"] not in self._seen_rcept_nos]
+
+        if not new_disclosures:
+            if self._check_count % 12 == 0:  # 1분마다 (5초 간격 x 12)
+                logger.info(
+                    f"[DART] 폴링 #{self._check_count} | "
+                    f"조회 {len(disclosures)}건 | 신규 0건 | 변동 없음"
+                )
+        else:
+            for d in new_disclosures:
                 self._seen_rcept_nos.add(d["rcept_no"])
 
+                logger.info(
+                    f"[DART] ★ 신규 공시 감지! | {d['report_nm']} | "
+                    f"접수번호={d['rcept_no']} | 접수일={d['rcept_dt']}"
+                )
+
                 summary = await self._fetch_document_summary(d["rcept_no"])
+                if summary:
+                    logger.info(f"[DART] 원문 요약 추출 완료 (접수번호={d['rcept_no']})")
+                else:
+                    logger.warning(f"[DART] 원문 요약 추출 실패 (접수번호={d['rcept_no']})")
 
                 msg = (
                     f"📢 <b>[DART 공시 알림]</b>\n\n"
@@ -77,12 +108,13 @@ class DartMonitor(BaseMonitor):
                 )
 
                 await self.notifier.send(msg)
-                logger.info(f"[DART] Alert sent for rcept_no={d['rcept_no']}")
+                logger.info(f"[DART] 텔레그램 알림 발송 완료 | 접수번호={d['rcept_no']}")
 
         self._consecutive_errors = 0
 
     async def _resolve_corp_code(self) -> str | None:
         try:
+            logger.info(f"[DART] corp_code 변환 시작 | 종목코드={self.config.DART_STOCK_CODE}")
             params = {"crtfc_key": self.config.DART_API_KEY}
             async with self.http.session.get(
                 self.config.DART_CORP_CODE_URL, params=params
@@ -110,18 +142,18 @@ class DartMonitor(BaseMonitor):
                 ):
                     code = corp_code_el.text.strip()
                     logger.info(
-                        f"[DART] Resolved stock_code {self.config.DART_STOCK_CODE} "
-                        f"-> corp_code {code}"
+                        f"[DART] corp_code 변환 성공 | "
+                        f"종목코드={self.config.DART_STOCK_CODE} → corp_code={code}"
                     )
                     return code
 
             logger.error(
-                f"[DART] stock_code {self.config.DART_STOCK_CODE} not found in corpCode.xml"
+                f"[DART] 종목코드 {self.config.DART_STOCK_CODE}을 corpCode.xml에서 찾을 수 없음"
             )
             return None
 
         except Exception as e:
-            logger.error(f"[DART] Failed to resolve corp_code: {e}")
+            logger.error(f"[DART] corp_code 변환 실패: {e}")
             return None
 
     async def _fetch_disclosures(self) -> list[dict] | None:
@@ -154,7 +186,7 @@ class DartMonitor(BaseMonitor):
                 return []
             elif status != "000":
                 logger.error(
-                    f"[DART] API error: status={status}, "
+                    f"[DART] API 오류: status={status}, "
                     f"message={data.get('message')}"
                 )
                 return None
@@ -163,7 +195,7 @@ class DartMonitor(BaseMonitor):
 
         except Exception as e:
             self._consecutive_errors += 1
-            logger.error(f"[DART] Fetch failed: {e}")
+            logger.error(f"[DART] 공시 조회 실패: {e}")
             return None
 
     async def _fetch_document_summary(self, rcept_no: str) -> str | None:
@@ -177,11 +209,10 @@ class DartMonitor(BaseMonitor):
                 self.config.DART_DOCUMENT_URL, params=params
             ) as resp:
                 if resp.status != 200:
-                    logger.warning(f"[DART] Document fetch failed: HTTP {resp.status}")
+                    logger.warning(f"[DART] 원문 다운로드 실패: HTTP {resp.status}")
                     return None
                 data = await resp.read()
 
-            # ZIP 안에 HTML/XML 파일들이 들어있음
             with zipfile.ZipFile(io.BytesIO(data)) as zf:
                 text_parts = []
                 for name in zf.namelist():
@@ -198,19 +229,17 @@ class DartMonitor(BaseMonitor):
             return self._extract_summary(full_text)
 
         except zipfile.BadZipFile:
-            logger.warning(f"[DART] Document response is not a ZIP (rcept_no={rcept_no})")
+            logger.warning(f"[DART] 원문 응답이 ZIP이 아님 (접수번호={rcept_no})")
             return None
         except Exception as e:
-            logger.warning(f"[DART] Document summary failed: {e}")
+            logger.warning(f"[DART] 원문 요약 실패: {e}")
             return None
 
     def _extract_summary(self, text: str) -> str:
         """원문 텍스트에서 핵심 내용을 추출"""
-        # 빈 줄, 공백 정리
         lines = [line.strip() for line in text.splitlines()]
         lines = [line for line in lines if len(line) > 1]
 
-        # 핵심 키워드가 포함된 줄을 우선 추출
         key_patterns = [
             r"결정일|이사회결의일|결의일",
             r"신규.*시설|투자|계약|양수|양도|합병",
@@ -228,8 +257,7 @@ class DartMonitor(BaseMonitor):
         for line in lines:
             for pattern in key_patterns:
                 if re.search(pattern, line) and line not in seen:
-                    # 표 형태 (항목: 값) 라인 우선
-                    cleaned = line[:150]  # 너무 긴 줄 자르기
+                    cleaned = line[:150]
                     important_lines.append(cleaned)
                     seen.add(line)
                     break
@@ -240,7 +268,6 @@ class DartMonitor(BaseMonitor):
         if important_lines:
             summary = "\n".join(f"  • {line}" for line in important_lines)
         else:
-            # 키워드 매칭이 안 되면 앞부분 텍스트 발췌
             content_lines = [l for l in lines if len(l) > 10][:10]
             summary = "\n".join(f"  • {line[:150]}" for line in content_lines)
 
@@ -252,4 +279,4 @@ class DartMonitor(BaseMonitor):
     def _handle_rate_limit(self):
         self._consecutive_errors += 1
         self._backoff_seconds = min(2 ** self._consecutive_errors, 300)
-        logger.warning(f"[DART] Rate limited. Backoff: {self._backoff_seconds}s")
+        logger.warning(f"[DART] Rate limit 감지! 백오프: {self._backoff_seconds}초")

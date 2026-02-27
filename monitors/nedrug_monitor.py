@@ -11,6 +11,7 @@ class NedrugMonitor(BaseMonitor):
         super().__init__(name="nedrug", **kwargs)
         self._last_item_seq: str | None = None
         self._last_approval_date: str | None = None
+        self._check_count: int = 0
 
     async def initialize(self):
         data = await self._fetch_product_data()
@@ -18,17 +19,25 @@ class NedrugMonitor(BaseMonitor):
             self._last_item_seq = data["item_seq"]
             self._last_approval_date = data["approval_date"]
             logger.info(
-                f"[nedrug] Baseline: item_seq={self._last_item_seq}, "
-                f"approval_date={self._last_approval_date}"
+                f"[nedrug] 초기화 완료 | "
+                f"품목기준코드={self._last_item_seq} | "
+                f"허가일={self._last_approval_date}"
             )
         else:
             self._last_item_seq = self.config.NEDRUG_KNOWN_ITEM_SEQ
             self._last_approval_date = self.config.NEDRUG_KNOWN_APPROVAL_DATE
-            logger.warning("[nedrug] Using config defaults for baseline")
+            logger.warning(
+                f"[nedrug] 초기화 시 파싱 실패 | "
+                f"config 기본값 사용: 품목기준코드={self._last_item_seq}, "
+                f"허가일={self._last_approval_date}"
+            )
 
     async def check(self):
+        self._check_count += 1
+
         data = await self._fetch_product_data()
         if not data:
+            logger.warning(f"[nedrug] 폴링 #{self._check_count} | 페이지 파싱 실패")
             return
 
         changes = []
@@ -42,6 +51,11 @@ class NedrugMonitor(BaseMonitor):
             )
 
         if changes:
+            logger.info(
+                f"[nedrug] ★ 변경 감지! | 폴링 #{self._check_count} | "
+                f"변경사항: {changes}"
+            )
+
             msg = (
                 f"🚨 <b>[nedrug 변경 감지 - 긴급]</b>\n\n"
                 f"<b>제품:</b> 뉴로나타-알주(자가골수유래중간엽줄기세포)\n"
@@ -51,10 +65,17 @@ class NedrugMonitor(BaseMonitor):
                 + f"\n\n<b>링크:</b> {self.config.NEDRUG_URL}"
             )
             await self.notifier.send(msg)
-            logger.info(f"[nedrug] Change detected and alerted: {changes}")
+            logger.info(f"[nedrug] 텔레그램 알림 발송 완료")
 
             self._last_item_seq = data["item_seq"]
             self._last_approval_date = data["approval_date"]
+        else:
+            if self._check_count % 60 == 0:  # 1분마다 (1초 간격 x 60)
+                logger.info(
+                    f"[nedrug] 폴링 #{self._check_count} | "
+                    f"품목기준코드={data['item_seq']} | "
+                    f"허가일={data['approval_date']} | 변동 없음"
+                )
 
     async def _fetch_product_data(self) -> dict | None:
         try:
