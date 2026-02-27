@@ -65,6 +65,7 @@ class NedrugMonitor(BaseMonitor):
                 + f"\n\n<b>링크:</b> {self.config.NEDRUG_URL}"
             )
             await self.notifier.send(msg)
+            self.alert_count += 1
             logger.info(f"[nedrug] 텔레그램 알림 발송 완료")
 
             self._last_item_seq = data["item_seq"]

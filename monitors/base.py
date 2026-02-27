@@ -23,6 +23,8 @@ class BaseMonitor(ABC):
         self.http = http_client
         self.notifier = notifier
         self.poll_interval = poll_interval or config.POLL_INTERVAL
+        self.alert_count: int = 0
+        self.error_count: int = 0
 
     @abstractmethod
     async def initialize(self):

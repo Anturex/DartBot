@@ -8,6 +8,7 @@ def config():
     return Config(
         TELEGRAM_BOT_TOKEN="test-token",
         TELEGRAM_CHAT_ID="test-chat-id",
+        TELEGRAM_MONITOR_CHAT_ID="test-monitor-chat-id",
         DART_API_KEY="test-dart-key",
     )
 

@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 class Config:
     TELEGRAM_BOT_TOKEN: str
     TELEGRAM_CHAT_ID: str
+    TELEGRAM_MONITOR_CHAT_ID: str
     DART_API_KEY: str
 
     MFDS_URL: str = "https://www.mfds.go.kr/brd/m_99/list.do"
@@ -44,9 +45,12 @@ def load_config() -> Config:
             f"Missing required environment variables: {', '.join(missing)}"
         )
 
+    monitor_chat_id = os.environ.get("TELEGRAM_MONITOR_CHAT_ID") or chat_id
+
     return Config(
         TELEGRAM_BOT_TOKEN=token,
         TELEGRAM_CHAT_ID=chat_id,
+        TELEGRAM_MONITOR_CHAT_ID=monitor_chat_id,
         DART_API_KEY=dart_key,
         PORT=int(os.environ.get("PORT", "10000")),
     )

@@ -108,6 +108,7 @@ class DartMonitor(BaseMonitor):
                 )
 
                 await self.notifier.send(msg)
+                self.alert_count += 1
                 logger.info(f"[DART] 텔레그램 알림 발송 완료 | 접수번호={d['rcept_no']}")
 
         self._consecutive_errors = 0

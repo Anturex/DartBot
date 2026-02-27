@@ -21,6 +21,53 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 SELF_PING_INTERVAL = 300  # 5분마다
+HOURLY_REPORT_INTERVAL = 3600  # 1시간마다
+
+
+async def hourly_report(monitors: list, notifier: TelegramNotifier, stop_event: asyncio.Event):
+    """1시간마다 모니터링 상태 요약을 무음으로 발송"""
+    start_time = asyncio.get_event_loop().time()
+    logger.info("[hourly-report] Started (interval=1h)")
+
+    while not stop_event.is_set():
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=HOURLY_REPORT_INTERVAL)
+            break
+        except asyncio.TimeoutError:
+            pass
+
+        uptime_sec = asyncio.get_event_loop().time() - start_time
+        hours = int(uptime_sec // 3600)
+        minutes = int((uptime_sec % 3600) // 60)
+
+        lines = []
+        for m in monitors:
+            check_count = getattr(m, "_check_count", 0)
+            alerts = m.alert_count
+            errors = m.error_count
+
+            if m.name == "MFDS":
+                seen = len(getattr(m, "_seen_seqs", set()))
+                lines.append(f"  <b>식약처:</b> 폴링 {check_count}회 | 추적 {seen}건 | 알림 {alerts}건 | 에러 {errors}건")
+            elif m.name == "nedrug":
+                item_seq = getattr(m, "_last_item_seq", "-")
+                approval = getattr(m, "_last_approval_date", "-")
+                lines.append(f"  <b>nedrug:</b> 폴링 {check_count}회 | 품목={item_seq} | 허가일={approval} | 알림 {alerts}건 | 에러 {errors}건")
+            elif m.name == "DART":
+                seen = len(getattr(m, "_seen_rcept_nos", set()))
+                lines.append(f"  <b>DART:</b> 폴링 {check_count}회 | 추적 {seen}건 | 알림 {alerts}건 | 에러 {errors}건")
+
+        msg = (
+            f"🕐 <b>[DartBot 정기 리포트]</b>\n\n"
+            f"<b>가동시간:</b> {hours}시간 {minutes}분\n\n"
+            + "\n".join(lines)
+            + "\n\n✅ 정상 감시 중"
+        )
+
+        await notifier.send_monitor(msg)
+        logger.info("[hourly-report] 정기 리포트 발송 완료 (무음)")
+
+    logger.info("[hourly-report] Stopped")
 
 
 async def self_ping(http_client: HttpClient, stop_event: asyncio.Event):
@@ -66,8 +113,9 @@ async def lifespan(app: FastAPI):
 
     tasks = [asyncio.create_task(m.run(stop_event)) for m in monitors]
     tasks.append(asyncio.create_task(self_ping(http_client, stop_event)))
+    tasks.append(asyncio.create_task(hourly_report(monitors, notifier, stop_event)))
 
-    await notifier.send(
+    await notifier.send_monitor(
         "✅ <b>[DartBot]</b> 모니터링 서버가 시작되었습니다.\n\n"
         "감시 대상:\n"
         "  1. 식약처 보도자료 (1초 간격)\n"

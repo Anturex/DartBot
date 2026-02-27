@@ -58,6 +58,7 @@ class MfdsMonitor(BaseMonitor):
                 f"\n<b>링크:</b> {BASE_URL}/view.do?seq={article['seq']}"
             )
             await self.notifier.send(msg)
+            self.alert_count += 1
             logger.info(f"[MFDS] 텔레그램 알림 발송 완료 | seq={article['seq']}")
 
     async def _fetch_articles(self) -> list[dict]:
