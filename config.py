@@ -8,6 +8,8 @@ class Config:
     TELEGRAM_CHAT_ID: str
     TELEGRAM_MONITOR_CHAT_ID: str
     DART_API_KEY: str
+    NAVER_CLIENT_ID: str = ""
+    NAVER_CLIENT_SECRET: str = ""
 
     MFDS_URL: str = "https://www.mfds.go.kr/brd/m_99/list.do"
     NEDRUG_URL: str = "https://nedrug.mfds.go.kr/pbp/CCBBB01/getItemDetail?itemSeq=202106193"
@@ -19,6 +21,12 @@ class Config:
     DART_POLL_INTERVAL: float = 5.0
     DART_STOCK_CODE: str = "166480"
     MFDS_KEYWORDS: tuple = ("뉴로나타", "루게릭")
+
+    NAVER_NEWS_API_URL: str = "https://openapi.naver.com/v1/search/news.json"
+    NEWS_KEYWORDS: tuple = ("코아스템켐온", "뉴로나타 알", "뉴로나타")
+    NEWS_POLL_INTERVAL: float = 5.0
+    NEWS_ACTIVE_START_HOUR: int = 8
+    NEWS_ACTIVE_END_HOUR: int = 18
 
     NEDRUG_KNOWN_ITEM_SEQ: str = "202106193"
     NEDRUG_KNOWN_APPROVAL_DATE: str = "2021-08-27"
@@ -46,11 +54,15 @@ def load_config() -> Config:
         )
 
     monitor_chat_id = os.environ.get("TELEGRAM_MONITOR_CHAT_ID") or chat_id
+    naver_id = os.environ.get("NAVER_CLIENT_ID", "")
+    naver_secret = os.environ.get("NAVER_CLIENT_SECRET", "")
 
     return Config(
         TELEGRAM_BOT_TOKEN=token,
         TELEGRAM_CHAT_ID=chat_id,
         TELEGRAM_MONITOR_CHAT_ID=monitor_chat_id,
         DART_API_KEY=dart_key,
+        NAVER_CLIENT_ID=naver_id,
+        NAVER_CLIENT_SECRET=naver_secret,
         PORT=int(os.environ.get("PORT", "10000")),
     )

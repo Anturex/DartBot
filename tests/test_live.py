@@ -20,6 +20,7 @@ from telegram_notifier import TelegramNotifier
 from monitors.mfds_monitor import MfdsMonitor
 from monitors.nedrug_monitor import NedrugMonitor
 from monitors.dart_monitor import DartMonitor
+from monitors.news_monitor import NewsMonitor
 from tests.conftest import make_mock_response
 
 
@@ -189,33 +190,82 @@ async def test_dart_live_connection_and_alert(live_config, live_http, live_notif
 
 
 # ============================================================
-# 5. 전체 통합: 3개 모니터 동시 실행 테스트
+# 5. 네이버 뉴스 모니터 - 실제 API 호출 + 새 뉴스 시뮬레이션
+# ============================================================
+
+@pytest.mark.asyncio
+async def test_news_live_parsing_and_alert(live_config, live_http, live_notifier):
+    """실제 네이버 뉴스 API로 검색하고, 최신 뉴스 1건을 새 뉴스로 시뮬레이션"""
+
+    monitor = NewsMonitor(
+        config=live_config, http_client=live_http, notifier=live_notifier
+    )
+    await monitor.initialize()
+    seen_count = len(monitor._seen_links)
+    print(f"\n  네이버 뉴스 {seen_count}건 로드 완료")
+    assert seen_count > 0, "네이버 뉴스 API 파싱 실패 - NAVER_CLIENT_ID/SECRET을 확인하세요"
+
+    # 실제 API에서 최신 뉴스 1건을 가져와서 새 뉴스인 것처럼 시뮬레이션
+    first_keyword = live_config.NEWS_KEYWORDS[0]
+    items = await monitor._search_news(first_keyword)
+    assert len(items) > 0, f"'{first_keyword}' 검색 결과 없음"
+
+    latest = items[0]
+    # seen에서 제거해서 새 뉴스로 인식되게 함
+    monitor._seen_links.discard(latest["link"])
+
+    original_search = monitor._search_news
+
+    async def fake_search(keyword):
+        if keyword == first_keyword:
+            return [latest]  # 최신 뉴스 1건만 반환
+        return []
+
+    monitor._search_news = fake_search
+    # 라이브 테스트는 시간대 무관하게 실행
+    monitor._is_active_hours = lambda: True
+    await monitor.check()
+
+    assert monitor.alert_count == 1, "뉴스 알림이 발송되지 않았습니다"
+
+    import re
+    title = re.sub(r"<[^>]+>", "", latest.get("title", ""))
+    print(f"  최신 뉴스: {title}")
+    print("  ✅ News 테스트 통과 - 텔레그램에서 뉴스 알림을 확인하세요")
+
+
+# ============================================================
+# 6. 전체 통합: 4개 모니터 동시 실행 테스트
 # ============================================================
 
 @pytest.mark.asyncio
 async def test_all_monitors_concurrent(live_config, live_http, live_notifier):
-    """세 모니터를 동시에 시작하고 정상 초기화 확인"""
+    """네 모니터를 동시에 시작하고 정상 초기화 확인"""
 
     mfds = MfdsMonitor(config=live_config, http_client=live_http, notifier=live_notifier)
     nedrug = NedrugMonitor(config=live_config, http_client=live_http, notifier=live_notifier)
     dart = DartMonitor(config=live_config, http_client=live_http, notifier=live_notifier)
+    news = NewsMonitor(config=live_config, http_client=live_http, notifier=live_notifier)
 
-    # 세 모니터 동시 초기화
+    # 네 모니터 동시 초기화
     await asyncio.gather(
         mfds.initialize(),
         nedrug.initialize(),
         dart.initialize(),
+        news.initialize(),
     )
 
     assert len(mfds._seen_seqs) > 0
     assert nedrug._last_item_seq is not None
     assert dart._corp_code is not None
+    assert len(news._seen_links) > 0
 
     await live_notifier.send(
         "🧪 <b>[DartBot 통합 테스트 완료]</b>\n\n"
         f"✅ MFDS: 보도자료 {len(mfds._seen_seqs)}건 감시 중\n"
         f"✅ nedrug: 품목코드={nedrug._last_item_seq}, 허가일={nedrug._last_approval_date}\n"
-        f"✅ DART: corp_code={dart._corp_code}, 공시 {len(dart._seen_rcept_nos)}건 감시 중\n\n"
+        f"✅ DART: corp_code={dart._corp_code}, 공시 {len(dart._seen_rcept_nos)}건 감시 중\n"
+        f"✅ 뉴스: {len(news._seen_links)}건 감시 중\n\n"
         "모든 모니터 정상 작동 확인!"
     )
 
@@ -223,3 +273,4 @@ async def test_all_monitors_concurrent(live_config, live_http, live_notifier):
     print(f"     MFDS: {len(mfds._seen_seqs)}건")
     print(f"     nedrug: 품목코드={nedrug._last_item_seq}")
     print(f"     DART: corp_code={dart._corp_code}, {len(dart._seen_rcept_nos)}건")
+    print(f"     뉴스: {len(news._seen_links)}건")

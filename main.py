@@ -13,6 +13,7 @@ from telegram_notifier import TelegramNotifier
 from monitors.mfds_monitor import MfdsMonitor
 from monitors.nedrug_monitor import NedrugMonitor
 from monitors.dart_monitor import DartMonitor
+from monitors.news_monitor import NewsMonitor
 
 logging.basicConfig(
     level=logging.INFO,
@@ -56,6 +57,9 @@ async def hourly_report(monitors: list, notifier: TelegramNotifier, stop_event: 
             elif m.name == "DART":
                 seen = len(getattr(m, "_seen_rcept_nos", set()))
                 lines.append(f"  <b>DART:</b> 폴링 {check_count}회 | 추적 {seen}건 | 알림 {alerts}건 | 에러 {errors}건")
+            elif m.name == "News":
+                seen = len(getattr(m, "_seen_links", set()))
+                lines.append(f"  <b>뉴스:</b> 폴링 {check_count}회 | 추적 {seen}건 | 알림 {alerts}건 | 에러 {errors}건")
 
         msg = (
             f"🕐 <b>[DartBot 정기 리포트]</b>\n\n"
@@ -109,6 +113,7 @@ async def lifespan(app: FastAPI):
         MfdsMonitor(config=config, http_client=http_client, notifier=notifier),
         NedrugMonitor(config=config, http_client=http_client, notifier=notifier),
         DartMonitor(config=config, http_client=http_client, notifier=notifier),
+        NewsMonitor(config=config, http_client=http_client, notifier=notifier),
     ]
 
     tasks = [asyncio.create_task(m.run(stop_event)) for m in monitors]
@@ -120,7 +125,8 @@ async def lifespan(app: FastAPI):
         "감시 대상:\n"
         "  1. 식약처 보도자료 (1초 간격)\n"
         "  2. nedrug 뉴로나타-알주 상세 (1초 간격)\n"
-        "  3. DART 코아스템켐온 공시 (5초 간격)"
+        "  3. DART 코아스템켐온 공시 (5초 간격)\n"
+        "  4. 네이버 뉴스 키워드 (5초 간격, 08~18시)"
     )
     logger.info("All monitors started")
 

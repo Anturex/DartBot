@@ -10,6 +10,10 @@ def config():
         TELEGRAM_CHAT_ID="test-chat-id",
         TELEGRAM_MONITOR_CHAT_ID="test-monitor-chat-id",
         DART_API_KEY="test-dart-key",
+        NAVER_CLIENT_ID="test-naver-id",
+        NAVER_CLIENT_SECRET="test-naver-secret",
+        NEWS_ACTIVE_START_HOUR=0,
+        NEWS_ACTIVE_END_HOUR=24,
     )
 
 
