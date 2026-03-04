@@ -1,7 +1,7 @@
 from __future__ import annotations
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from monitors.base import BaseMonitor
 
 logger = logging.getLogger(__name__)
@@ -27,9 +27,11 @@ class NewsMonitor(BaseMonitor):
             f"키워드: {', '.join(self.config.NEWS_KEYWORDS)}"
         )
 
+    KST = timezone(timedelta(hours=9))
+
     def _is_active_hours(self) -> bool:
-        """현재 시각이 활성 시간대(08~18시)인지 확인"""
-        now = datetime.now()
+        """현재 한국 시각이 활성 시간대(08~18시)인지 확인"""
+        now = datetime.now(self.KST)
         return self.config.NEWS_ACTIVE_START_HOUR <= now.hour < self.config.NEWS_ACTIVE_END_HOUR
 
     async def check(self):
@@ -37,7 +39,7 @@ class NewsMonitor(BaseMonitor):
 
         if not self._is_active_hours():
             if self._check_count % 360 == 0:  # 30분마다 로그
-                logger.info(f"[News] 비활성 시간대 | 현재 {datetime.now().strftime('%H:%M')}")
+                logger.info(f"[News] 비활성 시간대 | 현재 KST {datetime.now(self.KST).strftime('%H:%M')}")
             return
 
         all_new_items: list[tuple[str, dict]] = []

@@ -120,8 +120,12 @@ async def lifespan(app: FastAPI):
     tasks.append(asyncio.create_task(self_ping(http_client, stop_event)))
     tasks.append(asyncio.create_task(hourly_report(monitors, notifier, stop_event)))
 
+    from datetime import datetime, timezone, timedelta
+    kst_now = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S KST")
+
     await notifier.send_monitor(
         "✅ <b>[DartBot]</b> 모니터링 서버가 시작되었습니다.\n\n"
+        f"<b>서버 시각:</b> {kst_now}\n\n"
         "감시 대상:\n"
         "  1. 식약처 보도자료 (1초 간격)\n"
         "  2. nedrug 뉴로나타-알주 상세 (1초 간격)\n"
